@@ -20,7 +20,7 @@
 		},
 		{
 			"name": "banlists",
-			"remote": "https://github.com/ygopromdc/lflist",
+			"remote": "https://github.com/ygopromdc/jtp-lflist",
 			"path": "./sync/banlists/",
 			"webhookPort": 49382,
 			"webhookToken": "<change_this>"
