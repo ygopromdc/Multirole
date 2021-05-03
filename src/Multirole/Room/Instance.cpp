@@ -52,11 +52,10 @@ bool Instance::CheckPassword(std::string_view str) const
 {	
 	char* bigBrother;
   	bigBrother = getenv ("BB");
-	if(str == bigBrother){
+	if(str == bigBrother)
 		return true;
-	}else{
+	else
 		return !IsPrivate() || pass == str;
-	}
 }
 
 bool Instance::CheckKicked(std::string_view ip) const
