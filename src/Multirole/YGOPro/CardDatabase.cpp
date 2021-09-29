@@ -126,7 +126,7 @@ CardDatabase::CardDatabase(std::string_view absFilePath)
 	}
 }
 
-CardDatabase::~CardDatabase()
+CardDatabase::~CardDatabase() noexcept
 {
 	sqlite3_finalize(s2Stmt);
 	sqlite3_finalize(sStmt);
@@ -134,7 +134,7 @@ CardDatabase::~CardDatabase()
 	sqlite3_close(db);
 }
 
-bool CardDatabase::Merge(std::string_view absFilePath)
+bool CardDatabase::Merge(std::string_view absFilePath) noexcept
 {
 	sqlite3_reset(aStmt);
 	sqlite3_bind_text(aStmt, 1, absFilePath.data(), -1, SQLITE_TRANSIENT);
@@ -151,6 +151,7 @@ const OCG_CardData& CardDatabase::DataFromCode(uint32_t code) const
 	std::scoped_lock lock(mDataCache);
 	if(auto search = dataCache.find(code); search != dataCache.end())
 		return search->second;
+	std::scoped_lock lock2(mDb);
 	auto AllocSetcodes = [&](uint64_t dbVal) -> uint16_t*
 	{
 		static constexpr std::size_t SETCODES = 4U;
@@ -190,11 +191,12 @@ void CardDatabase::DataUsageDone([[maybe_unused]] const OCG_CardData& data) cons
 	// the point of the cache?
 }
 
-const CardExtraData& CardDatabase::ExtraFromCode(uint32_t code)
+const CardExtraData& CardDatabase::ExtraFromCode(uint32_t code) noexcept
 {
 	std::scoped_lock lock(mExtraCache);
 	if(auto search = extraCache.find(code); search != extraCache.end())
 		return search->second;
+	std::scoped_lock lock2(mDb);
 	CardExtraData& ced = extraCache[code]; // implicit insertion
 	sqlite3_reset(s2Stmt);
 	sqlite3_bind_int(s2Stmt, 1, code);

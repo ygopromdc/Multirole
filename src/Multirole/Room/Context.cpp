@@ -12,7 +12,7 @@
 namespace Ignis::Multirole::Room
 {
 
-Context::Context(CreateInfo&& info)
+Context::Context(CreateInfo&& info) noexcept
 	:
 	STOCMsgFactory(info.hostInfo.t0Count),
 	svc(info.svc),
@@ -22,7 +22,7 @@ Context::Context(CreateInfo&& info)
 	hostInfo(info.hostInfo),
 	limits(info.limits),
 	cdb(svc.dataProvider.GetDatabase()),
-	neededWins(static_cast<int32_t>(std::ceil(hostInfo.bestOf / 2.0F))),
+	neededWins((hostInfo.bestOf / 2) + (hostInfo.bestOf & 1)),
 	joinMsg(YGOPro::STOCMsg::JoinGame{hostInfo}),
 	retryErrorMsg(MakeChat(CHAT_MSG_TYPE_ERROR, I18N::CLIENT_ROOM_MSG_RETRY_ERROR)),
 	isPrivate(info.isPrivate),
@@ -34,19 +34,19 @@ Context::Context(CreateInfo&& info)
 		rl->Log(I18N::ROOM_LOGGER_ROOM_NOTES, info.notes);
 }
 
-Context::~Context() = default;
+Context::~Context() noexcept = default;
 
-const YGOPro::HostInfo& Context::HostInfo() const
+const YGOPro::HostInfo& Context::HostInfo() const noexcept
 {
 	return hostInfo;
 }
 
-bool Context::IsPrivate() const
+bool Context::IsPrivate() const noexcept
 {
 	return isPrivate;
 }
 
-std::map<uint8_t, std::string> Context::GetDuelistsNames() const
+std::map<uint8_t, std::string> Context::GetDuelistsNames() const noexcept
 {
 	std::map<uint8_t, std::string> ret;
 	{
@@ -59,13 +59,19 @@ std::map<uint8_t, std::string> Context::GetDuelistsNames() const
 
 // private
 
-uint8_t Context::GetSwappedTeam(uint8_t team) const
+bool Context::IsTiebreaking() const noexcept
+{
+	// FIXME: Actually read hostInfo when client is updated to handle it.
+	return true;
+}
+
+uint8_t Context::GetSwappedTeam(uint8_t team) const noexcept
 {
 	assert(team <= 1U);
 	return isTeam1GoingFirst ^ team;
 }
 
-std::array<uint8_t, 2U> Context::GetTeamCounts() const
+std::array<uint8_t, 2U> Context::GetTeamCounts() const noexcept
 {
 	std::array<uint8_t, 2U> ret{};
 	for(const auto& kv : duelists)
@@ -73,7 +79,7 @@ std::array<uint8_t, 2U> Context::GetTeamCounts() const
 	return ret;
 }
 
-void Context::SendToTeam(uint8_t team, const YGOPro::STOCMsg& msg)
+void Context::SendToTeam(uint8_t team, const YGOPro::STOCMsg& msg) noexcept
 {
 	assert(team <= 1U);
 	for(const auto& kv : duelists)
@@ -84,20 +90,20 @@ void Context::SendToTeam(uint8_t team, const YGOPro::STOCMsg& msg)
 	}
 }
 
-void Context::SendToSpectators(const YGOPro::STOCMsg& msg)
+void Context::SendToSpectators(const YGOPro::STOCMsg& msg) noexcept
 {
 	for(const auto& c : spectators)
 		c->Send(msg);
 }
 
-void Context::SendToAll(const YGOPro::STOCMsg& msg)
+void Context::SendToAll(const YGOPro::STOCMsg& msg) noexcept
 {
 	for(const auto& kv : duelists)
 		kv.second->Send(msg);
 	SendToSpectators(msg);
 }
 
-void Context::SendToAllExcept(Client& client, const YGOPro::STOCMsg& msg)
+void Context::SendToAllExcept(Client& client, const YGOPro::STOCMsg& msg) noexcept
 {
 	for(const auto& kv : duelists)
 	{
@@ -108,7 +114,7 @@ void Context::SendToAllExcept(Client& client, const YGOPro::STOCMsg& msg)
 	SendToSpectators(msg);
 }
 
-void Context::SendDuelistsInfo(Client& client)
+void Context::SendDuelistsInfo(Client& client) noexcept
 {
 	for(const auto& kv : duelists)
 	{
@@ -119,16 +125,17 @@ void Context::SendDuelistsInfo(Client& client)
 	}
 }
 
-void Context::SetupAsSpectator(Client& client)
+void Context::SetupAsSpectator(Client& client, bool sendJoin) noexcept
 {
 	spectators.insert(&client);
 	client.SetPosition(Client::POSITION_SPECTATOR);
-	client.Send(joinMsg);
+	if(sendJoin)
+		client.Send(joinMsg);
 	client.Send(MakeTypeChange(client, false));
 	SendDuelistsInfo(client);
 }
 
-void Context::MakeAndSendChat(Client& client, std::string_view msg)
+void Context::MakeAndSendChat(Client& client, std::string_view msg) noexcept
 {
 	if(auto p = client.Position(); p == Client::POSITION_SPECTATOR)
 	{
@@ -147,7 +154,7 @@ void Context::MakeAndSendChat(Client& client, std::string_view msg)
 
 std::unique_ptr<YGOPro::Deck> Context::LoadDeck(
 	const std::vector<uint32_t>& main,
-	const std::vector<uint32_t>& side) const
+	const std::vector<uint32_t>& side) const noexcept
 {
 	auto IsExtraDeckCardType = [](uint32_t type) constexpr -> bool
 	{
@@ -196,7 +203,7 @@ std::unique_ptr<YGOPro::Deck> Context::LoadDeck(
 		err);
 }
 
-std::unique_ptr<YGOPro::STOCMsg> Context::CheckDeck(const YGOPro::Deck& deck) const
+std::unique_ptr<YGOPro::STOCMsg> Context::CheckDeck(const YGOPro::Deck& deck) const noexcept
 {
 	using namespace Error;
 	using namespace YGOPro;
@@ -273,6 +280,8 @@ std::unique_ptr<YGOPro::STOCMsg> Context::CheckDeck(const YGOPro::Deck& deck) co
 		case ALLOWED_CARDS_TCG_ONLY:
 		case ALLOWED_CARDS_OCG_TCG:
 			return scope > SCOPE_OCG_TCG;
+		case ALLOWED_CARDS_WITH_PRERELEASE:
+			return (scope & (~SCOPE_OFFICIAL)) != 0U;
 		default:
 			return false;
 		}

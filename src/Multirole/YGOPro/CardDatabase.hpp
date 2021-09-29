@@ -26,25 +26,27 @@ public:
 	CardDatabase();
 
 	// Closes the database
-	~CardDatabase();
+	~CardDatabase() noexcept;
 
 	// Opens or creates a disk database
 	CardDatabase(std::string_view absFilePath);
 
 	// Add a new database to the amalgamation
-	bool Merge(std::string_view absFilePath);
+	bool Merge(std::string_view absFilePath) noexcept;
 
 	// Core::IDataSupplier overrides
 	const OCG_CardData& DataFromCode(uint32_t code) const override;
 	void DataUsageDone(const OCG_CardData& data) const override;
 
 	// Query extra data
-	const CardExtraData& ExtraFromCode(uint32_t code);
+	const CardExtraData& ExtraFromCode(uint32_t code) noexcept;
 private:
 	sqlite3* db{};
 	sqlite3_stmt* aStmt{};
 	sqlite3_stmt* sStmt{};
 	sqlite3_stmt* s2Stmt{};
+
+	mutable std::mutex mDb;
 
 	mutable std::unordered_map<uint32_t, OCG_CardData> dataCache;
 	mutable std::unordered_map<uint32_t, std::unique_ptr<uint16_t[]>> scCache;

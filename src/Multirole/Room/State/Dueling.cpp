@@ -20,7 +20,7 @@ namespace
 
 constexpr auto GRACE_PERIOD = std::chrono::seconds(5);
 
-inline void ResetTimers(State::Dueling& s, uint32_t limitInSeconds)
+inline void ResetTimers(State::Dueling& s, uint32_t limitInSeconds) noexcept
 {
 	using namespace std::chrono;
 	const auto secs = seconds(limitInSeconds) + GRACE_PERIOD;
@@ -36,7 +36,7 @@ constexpr auto CORE_EXC_REASON = Context::DuelFinishReason
 
 } // namespace
 
-StateOpt Context::operator()(State::Dueling& s)
+StateOpt Context::operator()(State::Dueling& s) noexcept
 {
 	using namespace YGOPro;
 	const auto seed = static_cast<uint32_t>(rng());
@@ -58,7 +58,7 @@ StateOpt Context::operator()(State::Dueling& s)
 	X(EXTRA_RULE_DIMENSION_DUEL,     511600002U); // NOLINT
 	X(EXTRA_RULE_TURBO_DUEL,         110000000U); // NOLINT
 	X(EXTRA_RULE_COMMAND_DUEL,       95200000U);  // NOLINT
-	X(EXTRA_RULE_DECK_MASTER,        300U);       // NOLINT
+	X(EXTRA_RULE_DECK_MASTER,        153999999U); // NOLINT
 	X(EXTRA_RULE_ACTION_DUEL,        151999999U); // NOLINT
 #undef X
 	// Construct replay.
@@ -226,7 +226,7 @@ StateOpt Context::operator()(State::Dueling& s)
 	return std::nullopt;
 }
 
-StateOpt Context::operator()(State::Dueling& s, const Event::ConnectionLost& e)
+StateOpt Context::operator()(State::Dueling& s, const Event::ConnectionLost& e) noexcept
 {
 	using Reason = DuelFinishReason::Reason;
 	const auto p = e.client.Position();
@@ -239,7 +239,7 @@ StateOpt Context::operator()(State::Dueling& s, const Event::ConnectionLost& e)
 	return Finish(s, DuelFinishReason{Reason::REASON_CONNECTION_LOST, winner});
 }
 
-StateOpt Context::operator()(State::Dueling& s, const Event::Join& e)
+StateOpt Context::operator()(State::Dueling& s, const Event::Join& e) noexcept
 {
 	SetupAsSpectator(e.client);
 	e.client.Send(MakeDuelStart());
@@ -250,7 +250,7 @@ StateOpt Context::operator()(State::Dueling& s, const Event::Join& e)
 	return std::nullopt;
 }
 
-StateOpt Context::operator()(State::Dueling& s, const Event::Response& e)
+StateOpt Context::operator()(State::Dueling& s, const Event::Response& e) noexcept
 {
 	if(s.replier != &e.client)
 		return std::nullopt;
@@ -277,7 +277,7 @@ StateOpt Context::operator()(State::Dueling& s, const Event::Response& e)
 	return std::nullopt;
 }
 
-StateOpt Context::operator()(State::Dueling& s, const Event::Surrender& e)
+StateOpt Context::operator()(State::Dueling& s, const Event::Surrender& e) noexcept
 {
 	using Reason = DuelFinishReason::Reason;
 	const auto p = e.client.Position();
@@ -290,7 +290,7 @@ StateOpt Context::operator()(State::Dueling& s, const Event::Surrender& e)
 	return Finish(s, DuelFinishReason{Reason::REASON_SURRENDERED, winner});
 }
 
-StateOpt Context::operator()(State::Dueling& s, const Event::TimerExpired& e)
+StateOpt Context::operator()(State::Dueling& s, const Event::TimerExpired& e) noexcept
 {
 	using Reason = DuelFinishReason::Reason;
 	uint8_t winner = 1U - e.team;
@@ -299,12 +299,12 @@ StateOpt Context::operator()(State::Dueling& s, const Event::TimerExpired& e)
 
 // private
 
-Client& Context::GetCurrentTeamClient(State::Dueling& s, uint8_t team)
+Client& Context::GetCurrentTeamClient(State::Dueling& s, uint8_t team) noexcept
 {
 	return *duelists[{team, s.currentPos[team]}];
 }
 
-std::optional<Context::DuelFinishReason> Context::Process(State::Dueling& s)
+std::optional<Context::DuelFinishReason> Context::Process(State::Dueling& s) noexcept
 {
 	using namespace YGOPro::CoreUtils;
 	auto PreAnalyzeMsg = [&](const Msg& msg) -> bool
@@ -534,7 +534,7 @@ std::optional<Context::DuelFinishReason> Context::Process(State::Dueling& s)
 	return std::nullopt;
 }
 
-StateVariant Context::Finish(State::Dueling& s, const DuelFinishReason& dfr)
+StateVariant Context::Finish(State::Dueling& s, const DuelFinishReason& dfr) noexcept
 {
 	using Reason = DuelFinishReason::Reason;
 	if(dfr.reason != Reason::REASON_CORE_CRASHED)
@@ -595,22 +595,25 @@ StateVariant Context::Finish(State::Dueling& s, const DuelFinishReason& dfr)
 		else if(dfr.reason == Reason::REASON_WRONG_RESPONSE)
 			SendWinMsg(WIN_REASON_WRONG_RESPONSE);
 		SendReplay();
-		if(hostInfo.bestOf <= 1 || dfr.winner == 2U)
+		if(hostInfo.bestOf <= 1) // Single.
 			return State::Rematching{turnDecider, {}};
-		wins[dfr.winner] += (s.matchKillReason) ? hostInfo.bestOf : 1U;
-		if(wins[dfr.winner] >= neededWins)
+		// Match.
+		duelsHad++;
+		if(dfr.winner != 2U)
+		{
+			wins[dfr.winner] += (s.matchKillReason.has_value()) ? neededWins : 1U;
+			if(wins[dfr.winner] >= neededWins)
+			{
+				SendToAll(MakeDuelEnd());
+				return State::Closing{};
+			}
+		}
+		else if(!IsTiebreaking() && duelsHad >= hostInfo.bestOf)
 		{
 			SendToAll(MakeDuelEnd());
 			return State::Closing{};
 		}
 		return State::Sidedecking{turnDecider, {}};
-	}
-	case Reason::REASON_CONNECTION_LOST:
-	{
-		SendWinMsg(WIN_REASON_CONNECTION_LOST);
-		SendReplay();
-		SendToAll(MakeDuelEnd());
-		return State::Closing{};
 	}
 	case Reason::REASON_CORE_CRASHED:
 	{
@@ -621,7 +624,12 @@ StateVariant Context::Finish(State::Dueling& s, const DuelFinishReason& dfr)
 			return State::Rematching{turnDecider, {}};
 		return State::Sidedecking{turnDecider, {}};
 	}
-	default: // So compiler doesn't complain
+	case Reason::REASON_CONNECTION_LOST:
+	{
+		SendWinMsg(WIN_REASON_CONNECTION_LOST);
+		[[fallthrough]];
+	}
+	default:
 	{
 		SendReplay();
 		SendToAll(MakeDuelEnd());
@@ -632,7 +640,7 @@ StateVariant Context::Finish(State::Dueling& s, const DuelFinishReason& dfr)
 
 const YGOPro::STOCMsg& Context::SaveToSpectatorCache(
 	State::Dueling& s,
-	YGOPro::STOCMsg&& msg)
+	YGOPro::STOCMsg&& msg) noexcept
 {
 	s.spectatorCache.emplace_back(msg);
 	return s.spectatorCache.back();
