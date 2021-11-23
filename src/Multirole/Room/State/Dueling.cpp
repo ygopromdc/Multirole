@@ -284,6 +284,7 @@ StateOpt Context::operator()(State::Dueling& s, const Event::Surrender& e) noexc
 	if(p == Client::POSITION_SPECTATOR)
 	{
 		e.client.Disconnect();
+		spectators.erase(&e.client);
 		return std::nullopt;
 	}
 	uint8_t winner = 1U - p.first;
@@ -314,7 +315,7 @@ std::optional<Context::DuelFinishReason> Context::Process(State::Dueling& s) noe
 		{
 			if(s.retryCount[s.replier->Position().first]++ < 1)
 			{
-				s.replier->Send(retryErrorMsg);
+				s.replier->Send(MakeChat(CHAT_MSG_TYPE_ERROR, I18N::CLIENT_ROOM_MSG_RETRY_ERROR));
 				if(!s.lastHint.empty())
 					s.replier->Send(MakeGameMsg(s.lastHint));
 				s.replier->Send(MakeGameMsg(s.lastRequest));
