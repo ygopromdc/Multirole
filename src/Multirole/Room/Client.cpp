@@ -16,7 +16,7 @@ Client::Client(
 	std::shared_ptr<Instance> r,
 	boost::asio::ip::tcp::socket socket,
 	std::string ip,
-	std::string name)
+	std::string name) noexcept
 	:
 	lobby(lobby),
 	room(std::move(r)),
@@ -24,7 +24,6 @@ Client::Client(
 	socket(std::move(socket)),
 	ip(std::move(ip)),
 	name(std::move(name)),
-	connectionLost(false),
 	disconnecting(false),
 	position(POSITION_SPECTATOR),
 	ready(false),
@@ -33,14 +32,14 @@ Client::Client(
 	lobby.IncrementConnectionCount(this->ip);
 }
 
-Client::~Client()
+Client::~Client() noexcept
 {
 	lobby.DecrementConnectionCount(ip);
 }
 
-void Client::Start()
+void Client::Start() noexcept
 {
-	auto self(shared_from_this());
+	auto self = shared_from_this();
 	boost::asio::post(strand,
 	[this, self]()
 	{
@@ -49,66 +48,66 @@ void Client::Start()
 	DoReadHeader();
 }
 
-const std::string& Client::Ip() const
+const std::string& Client::Ip() const noexcept
 {
 	return ip;
 }
 
-const std::string& Client::Name() const
+const std::string& Client::Name() const noexcept
 {
 	return name;
 }
 
-Client::PosType Client::Position() const
+Client::PosType Client::Position() const noexcept
 {
 	return position;
 }
 
-bool Client::Ready() const
+bool Client::Ready() const noexcept
 {
 	return ready;
 }
 
-const YGOPro::Deck* Client::OriginalDeck() const
+const YGOPro::Deck* Client::OriginalDeck() const noexcept
 {
 	return originalDeck.get();
 }
 
-const YGOPro::Deck* Client::CurrentDeck() const
+const YGOPro::Deck* Client::CurrentDeck() const noexcept
 {
 	if(!currentDeck)
 		return originalDeck.get();
 	return currentDeck.get();
 }
 
-void Client::MarkKicked() const
+void Client::MarkKicked() const noexcept
 {
 	room->AddKicked(ip);
 }
 
-void Client::SetPosition(const PosType& p)
+void Client::SetPosition(const PosType& p) noexcept
 {
 	position = p;
 }
 
-void Client::SetReady(bool r)
+void Client::SetReady(bool r) noexcept
 {
 	ready = r;
 }
 
-void Client::SetOriginalDeck(std::unique_ptr<YGOPro::Deck>&& newDeck)
+void Client::SetOriginalDeck(std::unique_ptr<YGOPro::Deck>&& newDeck) noexcept
 {
 	originalDeck = std::move(newDeck);
 }
 
-void Client::SetCurrentDeck(std::unique_ptr<YGOPro::Deck>&& newDeck)
+void Client::SetCurrentDeck(std::unique_ptr<YGOPro::Deck>&& newDeck) noexcept
 {
 	currentDeck = std::move(newDeck);
 }
 
-void Client::Send(const YGOPro::STOCMsg& msg)
+void Client::Send(const YGOPro::STOCMsg& msg) noexcept
 {
-	if(connectionLost || !socket.is_open())
+	if(!socket.is_open())
 		return;
 	std::scoped_lock lock(mOutgoing);
 	const bool writeInProgress = !outgoing.empty();
@@ -117,7 +116,7 @@ void Client::Send(const YGOPro::STOCMsg& msg)
 		DoWrite();
 }
 
-void Client::Disconnect()
+void Client::Disconnect() noexcept
 {
 	std::scoped_lock lock(mOutgoing);
 	if(outgoing.empty())
@@ -126,33 +125,32 @@ void Client::Disconnect()
 		disconnecting = true;
 }
 
-void Client::DoReadHeader()
+void Client::DoReadHeader() noexcept
 {
 	auto buffer = boost::asio::buffer(incoming.Data(), YGOPro::CTOSMsg::HEADER_LENGTH);
 	auto self = shared_from_this();
 	boost::asio::async_read(socket, buffer, boost::asio::bind_executor(strand,
 	[this, self](boost::system::error_code ec, std::size_t /*unused*/)
 	{
-		if(!ec && incoming.IsHeaderValid())
+		if(!ec && socket.is_open() && incoming.IsHeaderValid())
 		{
 			DoReadBody();
 		}
 		else if(ec != boost::asio::error::operation_aborted)
 		{
-			connectionLost = true;
 			room->Dispatch(Event::ConnectionLost{*this});
 		}
 	}));
 }
 
-void Client::DoReadBody()
+void Client::DoReadBody() noexcept
 {
 	auto buffer = boost::asio::buffer(incoming.Body(), incoming.GetLength());
 	auto self = shared_from_this();
 	boost::asio::async_read(socket, buffer, boost::asio::bind_executor(strand,
 	[this, self](boost::system::error_code ec, std::size_t /*unused*/)
 	{
-		if(!ec)
+		if(!ec && socket.is_open())
 		{
 			// Unlike Endpoint::RoomHosting, we dont want to finish connection
 			// if the message is not properly handled. Just ignore it.
@@ -161,13 +159,12 @@ void Client::DoReadBody()
 		}
 		else if(ec != boost::asio::error::operation_aborted)
 		{
-			connectionLost = true;
 			room->Dispatch(Event::ConnectionLost{*this});
 		}
 	}));
 }
 
-void Client::DoWrite()
+void Client::DoWrite() noexcept
 {
 	auto self = shared_from_this();
 	const auto& front = outgoing.front();
@@ -185,14 +182,14 @@ void Client::DoWrite()
 	});
 }
 
-void Client::Shutdown()
+void Client::Shutdown() noexcept
 {
 	boost::system::error_code ignore;
 	socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ignore);
 	socket.close(ignore);
 }
 
-void Client::HandleMsg()
+void Client::HandleMsg() noexcept
 {
 	switch(incoming.GetType())
 	{
