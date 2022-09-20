@@ -1,22 +1,29 @@
 project('multirole', 'c', 'cpp',
 	default_options : ['cpp_std=c++17', 'b_vscrt=static_from_buildtype'],
 	license : 'AGPL-3.0-or-later',
-	meson_version : '>=0.60.0',
+	meson_version : '>=0.59.3',
 	version : '1.0.1'
 )
 
 static_deps = host_machine.system() == 'windows'
 
 atomic_dep  = meson.get_compiler('cpp').find_library('atomic', required : false)
-boost_dep   = dependency('boost', version : '>=1.75', modules : ['filesystem'], static : static_deps)
+boost_dep   = dependency('boost', version : '>=1.78', modules : ['filesystem'], static : static_deps)
 dl_dep      = meson.get_compiler('cpp').find_library('dl', required : false)
-fmt_dep     = dependency('fmt', version : '>=6.0.0', static : static_deps)
 libgit2_dep = dependency('libgit2', static : static_deps)
+lzma_dep    = dependency('liblzma')
 openssl_dep = dependency('openssl', static : static_deps)
 rt_dep      = meson.get_compiler('cpp').find_library('rt', required : false)
 sqlite3_dep = dependency('sqlite3', static : static_deps)
 tcm_dep     = dependency('libtcmalloc_minimal', required : get_option('use_tcmalloc'), static : static_deps)
 thread_dep  = dependency('threads')
+
+# Get fmt dependency and configure so it's header-only
+fmt_dep = dependency('fmt', version : '>=6.0.0')
+if get_option('fmt_ho')
+	fmt_dep = declare_dependency(compile_args : '-DFMT_HEADER_ONLY', dependencies : fmt_dep)
+	fmt_dep = fmt_dep.partial_dependency(compile_args : true, includes : true)
+endif
 
 multirole_src_files = files([
 	'src/DLOpen.cpp',
@@ -61,9 +68,6 @@ multirole_src_files = files([
 	'src/Multirole/YGOPro/Deck.cpp',
 	'src/Multirole/YGOPro/Replay.cpp',
 	'src/Multirole/YGOPro/StringUtils.cpp',
-	'src/Multirole/YGOPro/LZMA/Alloc.c',
-	'src/Multirole/YGOPro/LZMA/LzFind.c',
-	'src/Multirole/YGOPro/LZMA/LzmaEnc.c'
 ])
 
 hornet_src_files = files([
@@ -73,7 +77,6 @@ hornet_src_files = files([
 
 executable('multirole', multirole_src_files,
 	c_args: [
-		'-D_7ZIP_ST',
 		'-D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS',
 		'-D_WINSOCK_DEPRECATED_NO_WARNINGS',
 		'-DNOMINMAX'
@@ -89,6 +92,7 @@ executable('multirole', multirole_src_files,
 		dl_dep,
 		fmt_dep,
 		libgit2_dep,
+		lzma_dep,
 		openssl_dep,
 		rt_dep,
 		sqlite3_dep,
@@ -102,7 +106,7 @@ executable('hornet', hornet_src_files,
 		'-DNOMINMAX'
 	],
 	dependencies: [
-		boost_dep,
+		boost_dep.partial_dependency(compile_args: true, includes: true),
 		dl_dep,
 		rt_dep
 	])

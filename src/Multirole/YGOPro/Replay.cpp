@@ -2,12 +2,11 @@
 
 #include <cassert>
 #include <cstring>
+#include <lzma.h>
 
 #include "Config.hpp"
 #include "Constants.hpp"
 #include "StringUtils.hpp"
-#include "LZMA/LzmaEnc.h"
-#include "LZMA/Alloc.h" // g_Alloc
 
 namespace YGOPro
 {
@@ -30,15 +29,16 @@ enum ReplayTypes
 
 enum ReplayFlags
 {
-	REPLAY_COMPRESSED     = 0x1,
-	REPLAY_TAG            = 0x2,
-	REPLAY_DECODED        = 0x4,
-	REPLAY_SINGLE_MODE    = 0x8,
-	REPLAY_LUA64          = 0x10,
-	REPLAY_NEWREPLAY      = 0x20,
-	REPLAY_HAND_TEST      = 0x40,
-	REPLAY_DIRECT_SEED    = 0x80,
-	REPLAY_64BIT_DUELFLAG = 0x100,
+	REPLAY_COMPRESSED      = 0x1,
+	REPLAY_TAG             = 0x2,
+	REPLAY_DECODED         = 0x4,
+	REPLAY_SINGLE_MODE     = 0x8,
+	REPLAY_LUA64           = 0x10,
+	REPLAY_NEWREPLAY       = 0x20,
+	REPLAY_HAND_TEST       = 0x40,
+	REPLAY_DIRECT_SEED     = 0x80,
+	REPLAY_64BIT_DUELFLAG  = 0x100,
+	REPLAY_EXTENDED_HEADER = 0x200,
 };
 
 struct ReplayHeader
@@ -46,10 +46,22 @@ struct ReplayHeader
 	uint32_t type; // See ReplayTypes.
 	uint32_t version; // Unused atm, should be set to YGOPro::ClientVersion.
 	uint32_t flags; // See ReplayFlags.
-	uint32_t seed; // Unix timestamp for YRPX. Core duel seed for YRP.
+	uint32_t timestamp; // Unix timestamp.
 	uint32_t size; // Uncompressed size of whatever is after this header.
 	uint32_t hash; // Unused.
-	uint8_t props[8]; // Used for LZMA compression (check their apis).
+	uint8_t props[8U]; // Used for LZMA compression (check their apis).
+};
+
+constexpr uint32_t HEADER_FLAGS = REPLAY_LUA64 | REPLAY_64BIT_DUELFLAG |
+                                  REPLAY_NEWREPLAY | REPLAY_EXTENDED_HEADER;
+
+struct ExtendedReplayHeader
+{
+	static constexpr uint64_t CURRENT_VERSION = 1U;
+
+	ReplayHeader base;
+	uint64_t version; // Version of this extended header.
+	uint64_t seed[4U]; // New 256bit seed.
 };
 
 // ***** YRPX Binary format *****
@@ -65,7 +77,7 @@ struct ReplayHeader
 // 	data [uint8_t * length]
 
 // ***** YRP Binary format *****
-// ReplayHeader
+// ExtendedReplayHeader
 // team0Count [uint32_t]
 // team0Names [20 char16_t * team0Count]
 // team1Count [uint32_t]
@@ -88,7 +100,7 @@ struct ReplayHeader
 
 Replay::Replay(
 	uint32_t unixTimestamp,
-	uint32_t seed,
+	const std::array<uint64_t, 4U>& seed,
 	const HostInfo& info,
 	const CodeVector& extraCards) noexcept
 	:
@@ -226,7 +238,7 @@ void Replay::Serialize() noexcept
 	// the whole YRPX past-the-header data.
 	[&](std::vector<uint8_t>& vec)
 	{
-		vec.resize(1U + sizeof(ReplayHeader) + YRPPastHeaderSize());
+		vec.resize(1U + sizeof(ExtendedReplayHeader) + YRPPastHeaderSize());
 		uint8_t* ptr = vec.data();
 		auto WriteCodeVector = [&ptr](const std::vector<uint32_t>& vec)
 		{
@@ -237,15 +249,19 @@ void Replay::Serialize() noexcept
 		// NOLINTNEXTLINE: Message type, Called OLD_REPLAY_FORMAT in common.h.
 		Write<uint8_t>(ptr, 231U);
 		// Replay header for YRP replay format.
-		Write(ptr, ReplayHeader
+		Write(ptr, ExtendedReplayHeader
 		{
-			REPLAY_YRP1,
-			ENCODED_SERVER_VERSION,
-			REPLAY_LUA64 | REPLAY_NEWREPLAY | REPLAY_DIRECT_SEED | REPLAY_64BIT_DUELFLAG,
-			seed,
-			static_cast<uint32_t>(YRPPastHeaderSize()),
-			0U,
-			{}
+			{
+				REPLAY_YRP1,
+				ENCODED_SERVER_VERSION,
+				HEADER_FLAGS,
+				0U, // NOTE: Zero'd by extended header. Used to be 32bit seed.
+				static_cast<uint32_t>(YRPPastHeaderSize()),
+				0U,
+				{}
+			},
+			ExtendedReplayHeader::CURRENT_VERSION,
+			{seed[0U], seed[1U], seed[2U], seed[3U]}
 		});
 		// Duelists count and their names.
 		WriteDuelists(ptr);
@@ -297,44 +313,42 @@ void Replay::Serialize() noexcept
 		return vec;
 	}();
 	// Replay header for YRPX replay format.
-	ReplayHeader header
+	ExtendedReplayHeader extHeader
 	{
-		REPLAY_YRPX,
-		ENCODED_SERVER_VERSION,
-		REPLAY_LUA64 | REPLAY_NEWREPLAY | REPLAY_64BIT_DUELFLAG,
-		unixTimestamp,
-		static_cast<uint32_t>(pthData.size()),
-		0U,
+		{
+			REPLAY_YRPX,
+			ENCODED_SERVER_VERSION,
+			HEADER_FLAGS,
+			unixTimestamp,
+			static_cast<uint32_t>(pthData.size()),
+			0U,
+			{}
+		},
+		ExtendedReplayHeader::CURRENT_VERSION,
 		{}
 	};
+	auto& header = extHeader.base;
 	// Compress past-the-header data.
-	std::vector<uint8_t> compData(pthData.size() * 2U);
-	CLzmaEncProps props;
-	LzmaEncProps_Init(&props);
-	props.numThreads = 1; // NOLINT: No multithreading.
-	SizeT destLen = compData.size();
-	SizeT outPropSize = LZMA_PROPS_SIZE;
-	LzmaEncode
-	(
-		compData.data(),
-		&destLen,
-		pthData.data(),
-		pthData.size(),
-		&props,
-		header.props,
-		&outPropSize,
-		0,
-		nullptr,
-		&g_Alloc,
-		&g_Alloc
-	);
-	compData.resize(destLen);
+	std::vector<uint8_t> compData(pthData.size());
+	lzma_options_lzma opts;
+	lzma_lzma_preset(&opts, 5);
+	opts.dict_size = 1 << 24;
+	lzma_filter filters[]
+	{
+		{LZMA_FILTER_LZMA1, &opts},
+		{LZMA_VLI_UNKNOWN, nullptr},
+	};
+	lzma_properties_encode(filters, header.props);
+	size_t compSize{};
+	lzma_raw_buffer_encode(filters, nullptr, pthData.data(), pthData.size(),
+	                       compData.data(), &compSize, compData.size());
+	compData.resize(compSize);
 	header.flags |= REPLAY_COMPRESSED;
 	pthData = std::move(compData);
 	// Write final binary replay.
-	bytes.resize(sizeof(ReplayHeader) + pthData.size());
+	bytes.resize(sizeof(ExtendedReplayHeader) + pthData.size());
 	uint8_t* ptr = bytes.data();
-	Write<ReplayHeader>(ptr, header);
+	Write<ExtendedReplayHeader>(ptr, extHeader);
 	std::memcpy(ptr, pthData.data(), pthData.size());
 	// Remove message that was appended for serializing purposes.
 	messages.pop_back();

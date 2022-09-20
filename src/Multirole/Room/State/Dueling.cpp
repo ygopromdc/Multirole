@@ -4,8 +4,8 @@
 #include "../../I18N.hpp"
 #include "../../Core/IWrapper.hpp"
 #include "../../Service/LogHandler.hpp"
-#define LOG_INFO(...) svc.logHandler.Log(ErrorCategory::CORE, s.replayId, __VA_ARGS__)
-#define LOG_ERROR(...) svc.logHandler.Log(ErrorCategory::CORE, s.replayId, __VA_ARGS__)
+#define LOG_INFO(...) svc.logHandler.Log(ErrorCategory::CORE, s.replayId, s.turnCounter, __VA_ARGS__)
+#define LOG_ERROR(...) svc.logHandler.Log(ErrorCategory::CORE, s.replayId, s.turnCounter, __VA_ARGS__)
 #include "../../Service/ReplayManager.hpp"
 #include "../../Service/ScriptProvider.hpp"
 #include "../../YGOPro/CardDatabase.hpp"
@@ -39,7 +39,13 @@ constexpr auto CORE_EXC_REASON = Context::DuelFinishReason
 StateOpt Context::operator()(State::Dueling& s) noexcept
 {
 	using namespace YGOPro;
-	const auto seed = static_cast<uint32_t>(rng());
+	const auto seed = Core::IWrapper::DuelOptions::SeedType
+	{{
+		rng(),
+		rng(),
+		rng(),
+		rng(),
+	}};
 	// Enable extra rules for the duel.
 	// These are controlled simply by adding custom cards
 	// with the rulesets to the game as playable cards, they will
@@ -57,6 +63,7 @@ StateOpt Context::operator()(State::Dueling& s) noexcept
 	X(EXTRA_RULE_DUELIST_KINGDOM,    511002621U); // NOLINT
 	X(EXTRA_RULE_DIMENSION_DUEL,     511600002U); // NOLINT
 	X(EXTRA_RULE_TURBO_DUEL,         110000000U); // NOLINT
+	X(EXTRA_RULE_RULE_OF_THE_DAY,    777777777U); // NOLINT
 	X(EXTRA_RULE_COMMAND_DUEL,       95200000U);  // NOLINT
 	X(EXTRA_RULE_DECK_MASTER,        153999999U); // NOLINT
 	X(EXTRA_RULE_ACTION_DUEL,        151999999U); // NOLINT
@@ -344,6 +351,7 @@ std::optional<Context::DuelFinishReason> Context::Process(State::Dueling& s) noe
 		else if(msgType == MSG_NEW_TURN)
 		{
 			ResetTimers(s, hostInfo.timeLimitInSeconds);
+			scriptLogger.SetTurnCounter(++s.turnCounter);
 		}
 		else if(DoesMessageRequireAnswer(msgType))
 		{

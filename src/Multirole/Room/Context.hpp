@@ -43,7 +43,6 @@ public:
 		RNG::Xoshiro256StarStar::StateType seed;
 		YGOPro::BanlistPtr banlist;
 		YGOPro::HostInfo hostInfo;
-		YGOPro::DeckLimits limits;
 		bool isPrivate;
 		const std::string& notes;
 	};
@@ -66,6 +65,7 @@ public:
 	~Context() noexcept;
 
 	const YGOPro::HostInfo& HostInfo() const noexcept;
+	bool IsStarted() const noexcept;
 	bool IsPrivate() const noexcept;
 	DuelistsMap GetDuelistsNames() const noexcept;
 
@@ -139,11 +139,11 @@ private:
 	const uint32_t id;
 	const YGOPro::BanlistPtr banlist;
 	const YGOPro::HostInfo hostInfo;
-	const YGOPro::DeckLimits limits;
 	const std::shared_ptr<YGOPro::CardDatabase> cdb;
 	const int32_t neededWins;
 	const YGOPro::STOCMsg joinMsg;
 	const bool isPrivate;
+	bool isStarted;
 	std::unique_ptr<RoomLogger> rl;
 	ScriptLogger scriptLogger;
 	RNG::Xoshiro256StarStar rng;

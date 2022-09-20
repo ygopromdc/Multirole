@@ -16,13 +16,13 @@ jobs:
         fetch-depth: 1
     - name: Install dependencies
       run: |
-        sudo apt-get --no-install-recommends --yes install libfmt-dev libgit2-dev libsqlite3-dev libssl-dev ninja-build
+        sudo apt-get --no-install-recommends --yes install libfmt-dev liblzma-dev libgit2-dev libsqlite3-dev libssl-dev ninja-build
         pip install meson
     - name: Get boost
       run: |
-        wget http://sourceforge.net/projects/boost/files/boost/1.75.0/boost_1_75_0.tar.bz2
-        tar --bzip2 -xf boost_1_75_0.tar.bz2
-        cd boost_1_75_0
+        wget http://sourceforge.net/projects/boost/files/boost/1.79.0/boost_1_79_0.tar.bz2
+        tar --bzip2 -xf boost_1_79_0.tar.bz2
+        cd boost_1_79_0
         ./bootstrap.sh --prefix=/usr/boost_root --with-libraries=filesystem
         sudo ./b2 install
     - name: Meson build

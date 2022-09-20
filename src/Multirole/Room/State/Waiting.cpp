@@ -128,7 +128,7 @@ StateOpt Context::operator()(State::Waiting& /*unused*/, const Event::Ready& e) 
 	bool value = e.value;
 	if(e.client.OriginalDeck() == nullptr)
 		value = false;
-	if(value && hostInfo.dontCheckDeck == 0U)
+	if(value)
 	{
 		if(auto error = CheckDeck(*e.client.OriginalDeck()); error)
 		{
@@ -226,6 +226,7 @@ StateOpt Context::operator()(State::Waiting& s, const Event::TryStart& e) noexce
 			return std::nullopt;
 	if(!ValidateDuelistsSetup())
 		return std::nullopt;
+	isStarted = true;
 	SendToAll(MakeDuelStart());
 	return State::RockPaperScissor{};
 }

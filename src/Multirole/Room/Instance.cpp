@@ -17,7 +17,6 @@ Instance::Instance(CreateInfo& info) noexcept
 		info.seed,
 		std::move(info.banlist),
 		info.hostInfo,
-		info.limits,
 		!pass.empty(),
 		notes}),
 	state(State::Waiting{nullptr})
@@ -30,8 +29,7 @@ bool Instance::IsPrivate() const noexcept
 
 bool Instance::Started() const noexcept
 {
-	std::shared_lock lock(mState);
-	return !std::holds_alternative<State::Waiting>(state);
+	return ctx.IsStarted();
 }
 
 const std::string& Instance::Notes() const noexcept

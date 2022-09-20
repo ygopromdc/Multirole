@@ -18,7 +18,7 @@ ScriptLogger::ScriptLogger(Service::LogHandler& lh, const YGOPro::HostInfo& host
 			// NOLINTNEXTLINE: DUEL_TCG_SEGOC_NONPUBLIC
 			return (f == c) || (f == (c | 0x100000000U));
 		};
-		if(hi.banlistHash == 0U || hi.dontCheckDeck != 0U || hi.extraRules != 0U)
+		if(hi.banlistHash == 0U || hi.dontCheckDeckContent != 0U || hi.extraRules != 0U)
 			return ErrorCategory::UNOFFICIAL;
 		if(Check(0x2E800U)) // NOLINT: DUEL_MODE_MR5
 			return ErrorCategory::OFFICIAL;
@@ -30,12 +30,18 @@ ScriptLogger::ScriptLogger(Service::LogHandler& lh, const YGOPro::HostInfo& host
 	}(hostInfo)),
 	prevMsg(),
 	currMsg(),
-	replayId(0U)
+	replayId(0U),
+	turnCounter(0U)
 {}
 
 void ScriptLogger::SetReplayID(uint64_t rid)
 {
 	replayId = rid;
+}
+
+void ScriptLogger::SetTurnCounter(uint32_t count)
+{
+	turnCounter = count;
 }
 
 void ScriptLogger::Log(LogType type, std::string_view str)
@@ -56,7 +62,7 @@ void ScriptLogger::Log(LogType type, std::string_view str)
 		return; // Do not log just yet.
 	}
 	if(currMsg != prevMsg)
-		lh.Log(ec, replayId, (prevMsg = currMsg));
+		lh.Log(ec, replayId, turnCounter, (prevMsg = currMsg));
 	currMsg.clear();
 }
 
